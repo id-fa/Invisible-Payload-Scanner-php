@@ -5,6 +5,10 @@ require __DIR__ . '/lib/Scanner.php';
 
 mb_internal_encoding('UTF-8');
 
+// 大規模ディレクトリ走査に備えて実行時間を 600 秒まで緩和
+@set_time_limit(600);
+@ini_set('max_execution_time', '600');
+
 // 安全装置: localhost 以外からのアクセスは拒否
 $remote = $_SERVER['REMOTE_ADDR'] ?? '';
 if (!in_array($remote, ['127.0.0.1', '::1', 'localhost'], true)) {
