@@ -182,7 +182,9 @@ if ($action === 'scan_text' || $action === 'scan_dir' || $action === 'scan_uploa
         <select id="filter-severity">
           <option value="">すべて</option>
           <option value="critical">critical</option>
+          <option value="high+">high+ (high 以上)</option>
           <option value="high">high</option>
+          <option value="medium+">medium+ (medium 以上)</option>
           <option value="medium">medium</option>
           <option value="low">low</option>
         </select>

@@ -90,13 +90,22 @@
     el.textContent = msg;
   }
 
+  const SEV_RANK = { low: 1, medium: 2, high: 3, critical: 4 };
+
+  function matchSeverity(filter, sev) {
+    if (!filter) return true;
+    if (filter.endsWith('+')) {
+      const min = SEV_RANK[filter.slice(0, -1)] || 0;
+      return (SEV_RANK[sev] || 0) >= min;
+    }
+    return sev === filter;
+  }
+
   function render(json) {
     if (!json) return;
     const r = json.result;
     const filter = $('#filter-severity').value;
-    const findings = filter
-      ? r.findings.filter((f) => f.severity === filter)
-      : r.findings;
+    const findings = r.findings.filter((f) => matchSeverity(filter, f.severity));
 
     const tbody = $('#findings tbody');
     tbody.innerHTML = '';
