@@ -23,23 +23,86 @@
   }
 
   async function postForm(action, build) {
-    setStatus('スキャン中...', 'pending');
+    setStatus('スキャン開始...', 'pending');
     const form = new FormData();
     form.append('action', action);
     commonFields(form);
     build(form);
 
+    const useStream = (action === 'scan_dir' || action === 'scan_upload');
+    if (useStream) form.append('stream', '1');
+
     try {
       const res = await fetch('index.php?action=' + action, { method: 'POST', body: form });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || 'unknown error');
-      lastResult = json;
-      render(json);
-      setStatus(buildStatusLine(json), 'ok');
+
+      if (useStream) {
+        const done = await readNdjson(res, action);
+        if (!done) throw new Error('ストリームが done を送らずに終了しました。');
+        lastResult = done;
+        render(done);
+        setStatus(buildStatusLine(done), 'ok');
+      } else {
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || 'unknown error');
+        lastResult = json;
+        render(json);
+        setStatus(buildStatusLine(json), 'ok');
+      }
     } catch (e) {
       setStatus('エラー: ' + e.message, 'error');
       $('#result').classList.add('hidden');
     }
+  }
+
+  // NDJSON を 1 行ずつ読み、progress は status に反映、done を返す。
+  async function readNdjson(res, action) {
+    const reader = res.body.getReader();
+    const dec = new TextDecoder('utf-8');
+    let buf = '';
+    let doneEvent = null;
+
+    const handle = (line) => {
+      if (!line) return;
+      let ev;
+      try { ev = JSON.parse(line); } catch { return; }
+      if (ev.type === 'progress') {
+        setStatus(formatProgress(ev, action), 'pending');
+      } else if (ev.type === 'done') {
+        doneEvent = ev;
+      } else if (ev.type === 'error') {
+        throw new Error(ev.error || 'unknown error');
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        handle(line);
+      }
+    }
+    if (buf.trim()) handle(buf.trim());
+    return doneEvent;
+  }
+
+  function formatProgress(ev, action) {
+    const totalPart = (typeof ev.total === 'number') ? ` / ${ev.total}` : '';
+    const cur = ev.current ? `  (${ellipsizePath(ev.current, 70)})` : '';
+    const label = action === 'scan_upload' ? 'アップロードスキャン' : 'ディレクトリスキャン';
+    if (ev.scanned === 0 && !ev.current) {
+      return `${label}: 開始しました…`;
+    }
+    return `${label}: ${ev.scanned}${totalPart} ファイル処理済 / skip ${ev.skipped}${cur}`;
+  }
+
+  function ellipsizePath(p, max) {
+    if (p.length <= max) return p;
+    const tail = p.slice(-(max - 3));
+    return '…' + tail;
   }
 
   function buildStatusLine(json) {

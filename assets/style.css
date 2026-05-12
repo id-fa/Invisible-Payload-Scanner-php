@@ -54,9 +54,16 @@ button { background: var(--panel-2); color: var(--fg); border: 1px solid var(--b
 button.primary { background: var(--accent); border-color: var(--accent); color: #0a1320; font-weight: 600; }
 button:hover { filter: brightness(1.1); }
 
-.status { padding: 10px 14px; border-radius: 8px; background: var(--panel-2); border:1px solid var(--border); }
-.status.error { background: #2a1418; border-color: #5a2630; color: #ffb6c0; }
-.status.ok    { background: #142a1a; border-color: #265a32; color: #b6f0c5; }
+.status { padding: 10px 14px; border-radius: 8px; background: var(--panel-2); border:1px solid var(--border);
+  font: 12px ui-monospace, Consolas, "Yu Gothic Mono", monospace; word-break: break-all; }
+.status.error   { background: #2a1418; border-color: #5a2630; color: #ffb6c0; }
+.status.ok      { background: #142a1a; border-color: #265a32; color: #b6f0c5; }
+.status.pending { background: #14202a; border-color: #265a4a; color: #b6e0f0;
+  animation: status-pulse 1.4s ease-in-out infinite; }
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.6; }
+}
 
 .result { background: var(--panel); border:1px solid var(--border); border-radius: 10px; padding: 16px; }
 .result .result-actions { display:flex; gap: 12px; align-items: center; margin: 4px 0 12px; }

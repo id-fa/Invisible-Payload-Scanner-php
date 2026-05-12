@@ -19,7 +19,23 @@ if (!in_array($remote, ['127.0.0.1', '::1', 'localhost'], true)) {
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 if ($action === 'scan_text' || $action === 'scan_dir' || $action === 'scan_upload') {
-    header('Content-Type: application/json; charset=utf-8');
+    $stream = !empty($_POST['stream']) && ($action === 'scan_dir' || $action === 'scan_upload');
+
+    if ($stream) {
+        header('Content-Type: application/x-ndjson; charset=utf-8');
+        header('X-Accel-Buffering: no');
+        header('Cache-Control: no-cache');
+        while (ob_get_level() > 0) { @ob_end_flush(); }
+        @ob_implicit_flush(true);
+    } else {
+        header('Content-Type: application/json; charset=utf-8');
+    }
+
+    $emit = static function (array $obj): void {
+        echo json_encode($obj, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+        @flush();
+    };
+
     try {
         $threshold = (int)($_POST['threshold'] ?? 8);
         $maxSize   = (int)($_POST['max_size'] ?? (5 * 1024 * 1024));
@@ -49,8 +65,22 @@ if ($action === 'scan_text' || $action === 'scan_dir' || $action === 'scan_uploa
         if ($action === 'scan_dir') {
             $dir = (string)($_POST['dir'] ?? '');
             if ($dir === '') throw new RuntimeException('ディレクトリパスを指定してください。');
-            $result = $scanner->scanDirectory($dir);
-            echo json_encode(['ok' => true, 'mode' => 'dir', 'dir' => $dir, 'result' => $result], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            if ($stream) {
+                $progress = static function (int $scanned, int $skipped, ?string $current) use ($emit): void {
+                    $emit([
+                        'type'    => 'progress',
+                        'scanned' => $scanned,
+                        'skipped' => $skipped,
+                        'current' => $current,
+                    ]);
+                };
+                $result = $scanner->scanDirectory($dir, $progress);
+                $emit(['type' => 'done', 'ok' => true, 'mode' => 'dir', 'dir' => $dir, 'result' => $result]);
+            } else {
+                $result = $scanner->scanDirectory($dir);
+                echo json_encode(['ok' => true, 'mode' => 'dir', 'dir' => $dir, 'result' => $result], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
             exit;
         }
 
@@ -67,6 +97,11 @@ if ($action === 'scan_text' || $action === 'scan_dir' || $action === 'scan_uploa
             $allFindings = [];
             $scanned = 0;
             $skipped = [];
+            $total   = count($tmps);
+
+            if ($stream) {
+                $emit(['type' => 'progress', 'scanned' => 0, 'skipped' => 0, 'current' => null, 'total' => $total]);
+            }
 
             foreach ($tmps as $i => $tmp) {
                 $name = (string)$names[$i];
@@ -88,9 +123,19 @@ if ($action === 'scan_text' || $action === 'scan_dir' || $action === 'scan_uploa
                 $r = $scanner->scanText($bytes, $name);
                 $allFindings = array_merge($allFindings, $r['findings']);
                 $scanned++;
+
+                if ($stream && $scanned % 100 === 0) {
+                    $emit([
+                        'type'    => 'progress',
+                        'scanned' => $scanned,
+                        'skipped' => count($skipped),
+                        'current' => $name,
+                        'total'   => $total,
+                    ]);
+                }
             }
 
-            echo json_encode([
+            $payload = [
                 'ok' => true,
                 'mode' => 'upload',
                 'result' => [
@@ -103,13 +148,24 @@ if ($action === 'scan_text' || $action === 'scan_dir' || $action === 'scan_uploa
                     'scanned_files' => $scanned,
                     'skipped_files' => $skipped,
                 ],
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            ];
+
+            if ($stream) {
+                $emit(['type' => 'progress', 'scanned' => $scanned, 'skipped' => count($skipped), 'current' => null, 'total' => $total]);
+                $emit(['type' => 'done'] + $payload);
+            } else {
+                echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
             exit;
         }
 
     } catch (Throwable $e) {
-        http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+        if ($stream) {
+            $emit(['type' => 'error', 'ok' => false, 'error' => $e->getMessage()]);
+        } else {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+        }
         exit;
     }
 }
@@ -119,7 +175,7 @@ if ($action === 'scan_text' || $action === 'scan_dir' || $action === 'scan_uploa
 <meta charset="utf-8">
 <title>Invisible Payload Scanner (PHP)</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="assets/style.css?v=1">
+<link rel="stylesheet" href="assets/style.css?v=2">
 </head>
 <body>
 <header>
@@ -226,6 +282,6 @@ if ($action === 'scan_text' || $action === 'scan_dir' || $action === 'scan_uploa
   <p>ローカル実行専用。サーバへのアクセスは 127.0.0.1 / ::1 のみ許可されます。</p>
 </footer>
 
-<script src="assets/app.js?v=1"></script>
+<script src="assets/app.js?v=2"></script>
 </body>
 </html>

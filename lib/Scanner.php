@@ -118,6 +118,12 @@ final class Scanner
     /**
      * ディレクトリを再帰スキャンする。
      *
+     * @param callable|null $onProgress fn(int $scanned, int $skipped, ?string $currentPath): void
+     *                                  進捗イベント発火タイミング:
+     *                                    - 開始時 (scanned=0)
+     *                                    - スキャン済が 100 件区切りになる毎
+     *                                    - 完了直前
+     *
      * @return array{
      *   findings: list<array<string,mixed>>,
      *   stats: array<string,mixed>,
@@ -125,7 +131,7 @@ final class Scanner
      *   skipped_files: list<array{path:string,reason:string}>
      * }
      */
-    public function scanDirectory(string $rootDir): array
+    public function scanDirectory(string $rootDir, ?callable $onProgress = null): array
     {
         $real = realpath($rootDir);
         if ($real === false || !is_dir($real)) {
@@ -135,6 +141,10 @@ final class Scanner
         $findings = [];
         $scanned  = 0;
         $skipped  = [];
+
+        if ($onProgress !== null) {
+            $onProgress(0, 0, null);
+        }
 
         $iter = new RecursiveIteratorIterator(
             new RecursiveCallbackFilterIterator(
@@ -187,6 +197,14 @@ final class Scanner
                 $findings = array_merge($findings, $result['findings']);
             }
             $scanned++;
+
+            if ($onProgress !== null && $scanned % 100 === 0) {
+                $onProgress($scanned, count($skipped), $path);
+            }
+        }
+
+        if ($onProgress !== null) {
+            $onProgress($scanned, count($skipped), null);
         }
 
         return [
